@@ -30,3 +30,5 @@ int main(int argc, char *argv[]) {
     SDL_Quit();
     return 0;
 }
+// INSTRUCTION
+//gcc main_sdl.c -o test_sdl -IC:/msys64/mingw64/include -LC:/msys64/mingw64/lib -lSDL2
