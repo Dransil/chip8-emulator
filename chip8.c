@@ -52,40 +52,212 @@ int chip8_load_rom(Chip8 *cpu, const char *filename) {
 }
 
 void chip8_cycle(Chip8 *cpu) {
-    // Fetch — Read opcode
+    // Fetch
     cpu->opcode = (cpu->memory[cpu->pc] << 8) | cpu->memory[cpu->pc + 1];
-
-    printf("PC: 0x%04X | Opcode: 0x%04X\n", cpu->pc, cpu->opcode);
-
-    // Increment the program counter
     cpu->pc += 2;
+
+    // Extract opcode components
+    uint8_t  X  = (cpu->opcode & 0x0F00) >> 8;
+    uint8_t  Y  = (cpu->opcode & 0x00F0) >> 4;
+    uint8_t  NN =  cpu->opcode & 0x00FF;
+    uint16_t NNN = cpu->opcode & 0x0FFF;
+    uint8_t  N  =  cpu->opcode & 0x000F;
 
     // Decode & Execute
     switch (cpu->opcode & 0xF000) {
+
         case 0x0000:
-            if (cpu->opcode == 0x00E0) {
-                // Limpiar pantalla
-                memset(cpu->display, 0, sizeof(cpu->display));
-                printf("  -> Clear screen\n");
+            switch (cpu->opcode) {
+                case 0x00E0:
+                    // Clean screen
+                    memset(cpu->display, 0, sizeof(cpu->display));
+                    break;
+                case 0x00EE:
+                    // Subroutine return
+                    cpu->sp--;
+                    cpu->pc = cpu->stack[cpu->sp];
+                    break;
             }
             break;
 
         case 0x1000:
-            // Jump to direction NNN
-            cpu->pc = cpu->opcode & 0x0FFF;
-            printf("  -> Jump to 0x%03X\n", cpu->pc);
+            // Jump to NNN
+            cpu->pc = NNN;
+            break;
+
+        case 0x2000:
+            // Call subroutine on NNN
+            cpu->stack[cpu->sp] = cpu->pc;
+            cpu->sp++;
+            cpu->pc = NNN;
+            break;
+
+        case 0x3000:
+            // Jump if VX == NN
+            if (cpu->V[X] == NN) cpu->pc += 2;
+            break;
+
+        case 0x4000:
+            // Jump if VX != NN
+            if (cpu->V[X] != NN) cpu->pc += 2;
+            break;
+
+        case 0x5000:
+            // Jump if VX == VY
+            if (cpu->V[X] == cpu->V[Y]) cpu->pc += 2;
             break;
 
         case 0x6000:
-            // Save NN on register VX
-            cpu->V[(cpu->opcode & 0x0F00) >> 8] = cpu->opcode & 0x00FF;
-            printf("  -> Set V%X = 0x%02X\n",
-                (cpu->opcode & 0x0F00) >> 8,
-                (cpu->opcode & 0x00FF));
+            // VX = NN
+            cpu->V[X] = NN;
+            break;
+
+        case 0x7000:
+            // VX += NN
+            cpu->V[X] += NN;
+            break;
+
+        case 0x8000:
+            switch (N) {
+                case 0x0: cpu->V[X]  = cpu->V[Y]; break;
+                case 0x1: cpu->V[X] |= cpu->V[Y]; break;
+                case 0x2: cpu->V[X] &= cpu->V[Y]; break;
+                case 0x3: cpu->V[X] ^= cpu->V[Y]; break;
+                case 0x4:
+                    // VX += VY with carry
+                    cpu->V[0xF] = (cpu->V[X] + cpu->V[Y] > 255) ? 1 : 0;
+                    cpu->V[X]  += cpu->V[Y];
+                    break;
+                case 0x5:
+                    // VX -= VY with borrow
+                    cpu->V[0xF] = (cpu->V[X] > cpu->V[Y]) ? 1 : 0;
+                    cpu->V[X]  -= cpu->V[Y];
+                    break;
+                case 0x6:
+                    // VX >>= 1
+                    cpu->V[0xF] = cpu->V[X] & 0x1;
+                    cpu->V[X] >>= 1;
+                    break;
+                case 0x7:
+                    // VX = VY - VX
+                    cpu->V[0xF] = (cpu->V[Y] > cpu->V[X]) ? 1 : 0;
+                    cpu->V[X]   = cpu->V[Y] - cpu->V[X];
+                    break;
+                case 0xE:
+                    // VX <<= 1
+                    cpu->V[0xF] = (cpu->V[X] >> 7) & 0x1;
+                    cpu->V[X] <<= 1;
+                    break;
+            }
+            break;
+
+        case 0x9000:
+            // Jump if VX != VY
+            if (cpu->V[X] != cpu->V[Y]) cpu->pc += 2;
+            break;
+
+        case 0xA000:
+            // I = NNN
+            cpu->I = NNN;
+            break;
+
+        case 0xB000:
+            // Jump to NNN + V0
+            cpu->pc = NNN + cpu->V[0];
+            break;
+
+        case 0xF000:
+            switch (NN) {
+                case 0x07:
+                    // VX = delay_timer
+                    cpu->V[X] = cpu->delay_timer;
+                    break;
+                case 0x15:
+                    // delay_timer = VX
+                    cpu->delay_timer = cpu->V[X];
+                    break;
+                case 0x18:
+                    // sound_timer = VX
+                    cpu->sound_timer = cpu->V[X];
+                    break;
+                case 0x1E:
+                    // I += VX
+                    cpu->I += cpu->V[X];
+                    break;
+                case 0x29:
+                    // I = VX digit sprite direction
+                    cpu->I = cpu->V[X] * 5;
+                    break;
+                case 0x33:
+                    // BCD de VX
+                    cpu->memory[cpu->I]     =  cpu->V[X] / 100;
+                    cpu->memory[cpu->I + 1] = (cpu->V[X] / 10) % 10;
+                    cpu->memory[cpu->I + 2] =  cpu->V[X] % 10;
+                    break;
+                case 0x55:
+                    // Save V0-VX on memory
+                    {
+                        int i;
+                        for (i = 0; i <= X; i++)
+                            cpu->memory[cpu->I + i] = cpu->V[i];
+                    }
+                    break;
+                case 0x65:
+                    // Read V0-VX from memory
+                    {
+                        int i;
+                        for (i = 0; i <= X; i++)
+                            cpu->V[i] = cpu->memory[cpu->I + i];
+                    }
+                    break;
+            }
             break;
 
         default:
-            printf("  -> Unknown opcode\n");
+            printf("Unknown opcode: 0x%04X\n", cpu->opcode);
             break;
     }
+
+    // Decrement timers
+    if (cpu->delay_timer > 0) cpu->delay_timer--;
+    if (cpu->sound_timer > 0) cpu->sound_timer--;
 }
+
+// void chip8_cycle(Chip8 *cpu) {
+//     // Fetch — Read opcode
+//     cpu->opcode = (cpu->memory[cpu->pc] << 8) | cpu->memory[cpu->pc + 1];
+
+//     printf("PC: 0x%04X | Opcode: 0x%04X\n", cpu->pc, cpu->opcode);
+
+//     // Increment the program counter
+//     cpu->pc += 2;
+
+//     // Decode & Execute
+//     switch (cpu->opcode & 0xF000) {
+//         case 0x0000:
+//             if (cpu->opcode == 0x00E0) {
+//                 // Limpiar pantalla
+//                 memset(cpu->display, 0, sizeof(cpu->display));
+//                 printf("  -> Clear screen\n");
+//             }
+//             break;
+
+//         case 0x1000:
+//             // Jump to direction NNN
+//             cpu->pc = cpu->opcode & 0x0FFF;
+//             printf("  -> Jump to 0x%03X\n", cpu->pc);
+//             break;
+
+//         case 0x6000:
+//             // Save NN on register VX
+//             cpu->V[(cpu->opcode & 0x0F00) >> 8] = cpu->opcode & 0x00FF;
+//             printf("  -> Set V%X = 0x%02X\n",
+//                 (cpu->opcode & 0x0F00) >> 8,
+//                 (cpu->opcode & 0x00FF));
+//             break;
+
+//         default:
+//             printf("  -> Unknown opcode\n");
+//             break;
+//     }
+// }
