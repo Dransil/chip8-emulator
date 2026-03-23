@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
     Chip8 cpu;
     chip8_init(&cpu);
 
-    if (!chip8_load_rom(&cpu, "pong.ch8"))
+    if (!chip8_load_rom(&cpu, "Soccer.ch8"))
     {
         return 1;
     }
