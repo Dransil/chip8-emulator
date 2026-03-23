@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "chip8.h"
-
+#include <stdlib.h>
+#include <time.h>
 // Built-in font (0-F)
 uint8_t fontset[80] = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -24,6 +25,7 @@ uint8_t fontset[80] = {
 
 void chip8_init(Chip8 *cpu)
 {
+    srand(time(NULL));
     // Clean all
     memset(cpu, 0, sizeof(Chip8));
 
@@ -230,6 +232,26 @@ void chip8_cycle(Chip8 *cpu)
                     cpu->V[i] = cpu->memory[cpu->I + i];
             }
             break;
+        case 0x0A:
+        {
+            // Wait for key press, store in VX
+            int pressed = -1;
+            int i;
+            for (i = 0; i < 16; i++)
+            {
+                if (cpu->keypad[i])
+                {
+                    pressed = i;
+                    break;
+                }
+            }
+            // If no key pressed, repeat this instruction
+            if (pressed == -1)
+                cpu->pc -= 2;
+            else
+                cpu->V[X] = pressed;
+            break;
+        }
         }
         break;
     case 0xD000:
@@ -265,6 +287,26 @@ void chip8_cycle(Chip8 *cpu)
         }
         break;
     }
+    case 0xC000:
+        // VX = random number & NN
+        cpu->V[X] = (rand() % 256) & NN;
+        break;
+    case 0xE000:
+        switch (NN)
+        {
+        case 0x9E:
+            // Skip if key VX is pressed
+            if (cpu->keypad[cpu->V[X]])
+                cpu->pc += 2;
+            break;
+        case 0xA1:
+            // Skip if key VX is not pressed
+            if (!cpu->keypad[cpu->V[X]])
+                cpu->pc += 2;
+            break;
+        }
+        break;
+
     default:
         printf("Unknown opcode: 0x%04X\n", cpu->opcode);
         break;
