@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
     Chip8 cpu;
     chip8_init(&cpu);
 
-    if (!chip8_load_rom(&cpu, "Soccer.ch8"))
+    if (!chip8_load_rom(&cpu, "test-programs\\ibm.ch8")) //Change files
     {
         return 1;
     }
